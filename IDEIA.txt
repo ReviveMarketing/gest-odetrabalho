@@ -1,0 +1,478 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Pause, Coffee, Utensils, History, Clock, Award, Trash2, ClipboardList, LogOut, CheckCircle, AlertCircle } from 'lucide-react';
+
+// Frases motivacionais para a equipe
+const MOTIVATIONAL_QUOTES = [
+  "O sucesso é a soma de pequenos esforços repetidos dia após dia.",
+  "Acredite que você pode, assim você já está no meio do caminho.",
+  "Produtividade nunca é um acidente. É sempre o resultado de comprometimento com a excelência.",
+  "Transforme seus obstáculos em degraus para o sucesso.",
+  "A única maneira de fazer um ótimo trabalho é amar o que você faz.",
+  "Sua atitude determina sua altitude. Voe alto, ReVive!",
+  "Foco, força e fé no processo de vendas.",
+  "Cada minuto focado é uma semente plantada para o futuro."
+];
+
+export default function App() {
+  // Estados do Cronômetro e Sistema
+  const [isActive, setIsActive] = useState(false); // Se o cronômetro está rodando
+  const [isPaused, setIsPaused] = useState(false); // Pausa técnica (enquanto escolhe no modal)
+  const [time, setTime] = useState(0); // Tempo da sessão ATUAL (seja trabalho ou pausa)
+  
+  // Totais Acumulados
+  const [totalWorkedSeconds, setTotalWorkedSeconds] = useState(0);
+  const [totalPausedSeconds, setTotalPausedSeconds] = useState(0);
+  
+  const [sessionType, setSessionType] = useState('Trabalho'); // Trabalho, Pausa Curta, Almoço, Café
+  const [history, setHistory] = useState([]);
+  const [quote, setQuote] = useState(MOTIVATIONAL_QUOTES[0]);
+  
+  // Modais e Telas
+  const [showBreakModal, setShowBreakModal] = useState(false);
+  const [showEndDaySummary, setShowEndDaySummary] = useState(false);
+  
+  const [currentClock, setCurrentClock] = useState(new Date());
+
+  const timerRef = useRef(null);
+
+  // Carregar dados salvos
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('reviveHistory');
+    const savedTotalWork = localStorage.getItem('reviveTotalWork');
+    const savedTotalPause = localStorage.getItem('reviveTotalPause');
+    
+    if (savedHistory) setHistory(JSON.parse(savedHistory));
+    if (savedTotalWork) setTotalWorkedSeconds(parseInt(savedTotalWork, 10));
+    if (savedTotalPause) setTotalPausedSeconds(parseInt(savedTotalPause, 10));
+    
+    setQuote(MOTIVATIONAL_QUOTES[Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length)]);
+  }, []);
+
+  // Salvar dados
+  useEffect(() => {
+    localStorage.setItem('reviveHistory', JSON.stringify(history));
+    localStorage.setItem('reviveTotalWork', totalWorkedSeconds.toString());
+    localStorage.setItem('reviveTotalPause', totalPausedSeconds.toString());
+  }, [history, totalWorkedSeconds, totalPausedSeconds]);
+
+  // Relógio Topo
+  useEffect(() => {
+    const clockInterval = setInterval(() => setCurrentClock(new Date()), 1000);
+    return () => clearInterval(clockInterval);
+  }, []);
+
+  // Lógica Principal do Cronômetro
+  useEffect(() => {
+    if (isActive && !isPaused) {
+      timerRef.current = setInterval(() => {
+        setTime((prevTime) => prevTime + 1);
+        
+        // Decide onde somar o tempo total
+        if (sessionType === 'Trabalho') {
+          setTotalWorkedSeconds((prev) => prev + 1);
+        } else {
+          setTotalPausedSeconds((prev) => prev + 1);
+        }
+      }, 1000);
+    } else {
+      clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [isActive, isPaused, sessionType]);
+
+  // --- Ações ---
+
+  const handleStart = () => {
+    setIsActive(true);
+    setIsPaused(false);
+    setSessionType('Trabalho');
+    setQuote(MOTIVATIONAL_QUOTES[Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length)]);
+  };
+
+  const requestPause = () => {
+    // Para o cronômetro momentaneamente apenas para escolher a opção
+    setIsPaused(true); 
+    setShowBreakModal(true);
+  };
+
+  const confirmBreak = (type) => {
+    // 1. Registra o tempo da sessão anterior (que era Trabalho)
+    if (time > 0 && sessionType === 'Trabalho') {
+      addLog('Trabalho', time);
+    }
+
+    // 2. Configura a nova sessão de Pausa
+    setSessionType(type);
+    setTime(0); // Zera o contador visual para contar a duração da pausa
+    setIsActive(true); // O cronômetro CONTINUA rodando
+    setIsPaused(false); // Sai do estado de espera
+    setShowBreakModal(false);
+    
+    // Adiciona marcador visual no histórico de início
+    // (Opcional, mas ajuda a visualizar quando começou)
+  };
+
+  const returnToWork = () => {
+    // 1. Registra o tempo da pausa que acabou de encerrar
+    if (time > 0) {
+      addLog(sessionType, time);
+    }
+
+    // 2. Volta para Trabalho
+    setSessionType('Trabalho');
+    setTime(0);
+    setIsActive(true);
+    setIsPaused(false);
+    setQuote(MOTIVATIONAL_QUOTES[Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length)]);
+  };
+
+  const endDay = () => {
+    setIsPaused(true); // Pausa tudo
+    setShowEndDaySummary(true); // Mostra o resumo
+  };
+
+  const confirmEndDay = () => {
+    // Reseta tudo para o dia seguinte
+    setIsActive(false);
+    setIsPaused(false);
+    setTime(0);
+    setTotalWorkedSeconds(0);
+    setTotalPausedSeconds(0);
+    setHistory([]);
+    setSessionType('Trabalho');
+    setShowEndDaySummary(false);
+    
+    localStorage.removeItem('reviveHistory');
+    localStorage.removeItem('reviveTotalWork');
+    localStorage.removeItem('reviveTotalPause');
+  };
+
+  const addLog = (type, durationSeconds) => {
+    const now = new Date();
+    const timeString = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    
+    // Define se é um log de pausa ou trabalho para colorir diferente
+    const isBreakLog = type !== 'Trabalho';
+
+    const newLog = {
+      id: Date.now() + Math.random(),
+      type: type,
+      duration: durationSeconds,
+      timeString: timeString,
+      isBreakLog: isBreakLog
+    };
+    
+    setHistory((prev) => [newLog, ...prev]);
+  };
+
+  // --- Formatadores ---
+  const formatTime = (seconds) => {
+    const getSeconds = `0${(seconds % 60)}`.slice(-2);
+    const minutes = Math.floor(seconds / 60);
+    const getMinutes = `0${minutes % 60}`.slice(-2);
+    const getHours = `0${Math.floor(seconds / 3600)}`.slice(-2);
+    return `${getHours}:${getMinutes}:${getSeconds}`;
+  };
+
+  const formatTimeShort = (seconds) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+  };
+
+  // Cores dinâmicas baseadas no estado
+  const isWorking = sessionType === 'Trabalho';
+  const mainCardColor = isWorking 
+    ? "bg-white" 
+    : "bg-amber-50 border-2 border-amber-300";
+  
+  const timerTextColor = isWorking
+    ? "text-gray-800"
+    : "text-amber-700";
+
+  return (
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-800 flex flex-col relative">
+      {/* Header */}
+      <header className="bg-gradient-to-r from-violet-600 to-purple-500 text-white p-6 shadow-lg z-10">
+        <div className="max-w-5xl mx-auto flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold tracking-wide">ReVive</h1>
+            <p className="text-xs text-purple-200 opacity-90 uppercase tracking-widest">Sistema de Produtividade</p>
+          </div>
+          <div className="text-right flex flex-col items-end">
+            <span className="text-2xl font-mono font-bold leading-none">
+              {currentClock.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <span className="text-xs opacity-80 font-medium uppercase mt-1">
+              {currentClock.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-grow max-w-5xl mx-auto w-full p-4 md:p-6 space-y-6">
+        
+        {/* Frase Motivacional */}
+        {!showEndDaySummary && (
+          <div className="bg-white rounded-xl shadow-sm border-l-4 border-purple-500 p-6 flex items-start gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <Award className="w-8 h-8 text-yellow-500 flex-shrink-0 mt-1" />
+            <div>
+              <h3 className="text-purple-700 font-semibold text-sm uppercase mb-1">Motivação do Momento</h3>
+              <p className="text-lg text-gray-700 italic">"{quote}"</p>
+            </div>
+          </div>
+        )}
+
+        <div className="grid md:grid-cols-2 gap-6">
+          
+          {/* Coluna Esquerda: Controles */}
+          <div className="space-y-6">
+            
+            {/* Card Principal do Cronômetro */}
+            <div className={`rounded-2xl shadow-xl overflow-hidden relative transition-colors duration-500 ${mainCardColor}`}>
+              <div className={`absolute top-0 left-0 w-full h-2 bg-gradient-to-r ${isWorking ? 'from-green-400 to-blue-500' : 'from-yellow-400 to-orange-500'}`}></div>
+              
+              <div className="p-8 text-center space-y-6">
+                <div className="space-y-2">
+                  <span className={`inline-block px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider shadow-sm ${
+                    !isActive ? 'bg-gray-100 text-gray-500' :
+                    isWorking ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {!isActive ? 'Aguardando Início' : isWorking ? 'Jornada Ativa' : `Em Pausa: ${sessionType}`}
+                  </span>
+                  
+                  <div className={`text-7xl font-mono font-bold tracking-tighter tabular-nums ${timerTextColor}`}>
+                    {formatTime(time)}
+                  </div>
+                  <p className="text-gray-400 text-sm">
+                    {isWorking ? 'Tempo Focado Atual' : 'Tempo de Pausa Atual'}
+                  </p>
+                </div>
+
+                <div className="flex justify-center gap-4">
+                  {!isActive ? (
+                    <button 
+                      onClick={handleStart}
+                      className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-8 py-4 rounded-xl font-bold text-lg transition-all transform hover:scale-105 shadow-lg shadow-violet-200 w-full justify-center"
+                    >
+                      <Play className="w-6 h-6 fill-current" />
+                      INICIAR DIA
+                    </button>
+                  ) : isWorking ? (
+                    <div className="flex gap-3 w-full">
+                        <button 
+                        onClick={requestPause}
+                        className="flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-4 rounded-xl font-bold text-lg transition-all shadow-lg shadow-amber-200"
+                        >
+                        <Pause className="w-6 h-6 fill-current" />
+                        PAUSAR
+                        </button>
+                        <button 
+                        onClick={endDay}
+                        className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-900 text-white px-6 py-4 rounded-xl font-bold text-lg transition-all shadow-lg"
+                        title="Encerrar Dia"
+                        >
+                        <LogOut className="w-6 h-6" />
+                        </button>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={returnToWork}
+                      className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-xl font-bold text-lg transition-all transform hover:scale-105 shadow-lg shadow-green-200 w-full justify-center animate-pulse"
+                    >
+                      <Play className="w-6 h-6 fill-current" />
+                      VOLTAR AO TRABALHO
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Resumo de Totais */}
+            <div className="grid grid-cols-2 gap-4">
+                <div className="bg-indigo-900 rounded-xl p-5 text-white shadow-lg flex flex-col justify-between relative overflow-hidden">
+                    <div className="z-10 relative">
+                        <p className="text-indigo-200 text-xs font-bold uppercase mb-1">Tempo Produtivo</p>
+                        <div className="text-2xl font-bold">{formatTimeShort(totalWorkedSeconds)}</div>
+                    </div>
+                    <Clock className="absolute right-2 bottom-2 w-12 h-12 text-white opacity-10" />
+                </div>
+
+                <div className="bg-amber-100 rounded-xl p-5 text-amber-900 shadow-lg flex flex-col justify-between relative overflow-hidden border border-amber-200">
+                    <div className="z-10 relative">
+                        <p className="text-amber-700 text-xs font-bold uppercase mb-1">Tempo Ocioso</p>
+                        <div className="text-2xl font-bold">{formatTimeShort(totalPausedSeconds)}</div>
+                    </div>
+                    <Coffee className="absolute right-2 bottom-2 w-12 h-12 text-amber-600 opacity-10" />
+                </div>
+            </div>
+          </div>
+
+          {/* Coluna Direita: Histórico */}
+          <div className="bg-white rounded-2xl shadow-md p-6 flex flex-col h-full min-h-[400px] max-h-[600px]">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <History className="w-5 h-5 text-purple-600" />
+                Atividades do Dia
+              </h2>
+            </div>
+
+            <div className="flex-grow overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+              {history.length === 0 ? (
+                <div className="text-center py-10 text-gray-400 flex flex-col items-center">
+                  <ClipboardList className="w-12 h-12 mb-3 opacity-20" />
+                  <p>Inicie o dia para registrar atividades.</p>
+                </div>
+              ) : (
+                history.map((log) => (
+                  <div key={log.id} className={`p-4 rounded-lg border-l-4 flex justify-between items-center ${
+                    log.isBreakLog 
+                      ? 'bg-amber-50 border-amber-400' 
+                      : 'bg-green-50 border-green-500'
+                  }`}>
+                    <div>
+                      <div className="font-bold text-gray-800 text-sm flex items-center gap-2">
+                        {log.type === 'Trabalho' ? (
+                           <CheckCircle className="w-4 h-4 text-green-600" />
+                        ) : (
+                           <AlertCircle className="w-4 h-4 text-amber-600" />
+                        )}
+                        {log.type}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">Concluído às {log.timeString}</div>
+                    </div>
+                    <div className={`font-mono font-bold text-sm px-3 py-1 rounded-full ${
+                        log.isBreakLog ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'
+                    }`}>
+                      {formatTime(log.duration)}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* MODAL 1: Seleção de Pausa */}
+      {showBreakModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 duration-200">
+            <h3 className="text-xl font-bold text-gray-800 mb-2">Registrar Pausa</h3>
+            <p className="text-gray-500 mb-6">Selecione o tipo de pausa. O tempo começará a contar automaticamente.</p>
+            
+            <div className="grid gap-3">
+              <button 
+                onClick={() => confirmBreak('Pausa Curta')}
+                className="flex items-center gap-4 w-full p-4 rounded-xl border border-gray-200 hover:border-purple-500 hover:bg-purple-50 transition-all group"
+              >
+                <div className="bg-gray-100 group-hover:bg-purple-200 p-3 rounded-full transition-colors">
+                  <Pause className="w-5 h-5 text-gray-600 group-hover:text-purple-700" />
+                </div>
+                <div className="text-left">
+                  <span className="block font-bold text-gray-800">Pausa Rápida</span>
+                  <span className="text-xs text-gray-500">Banheiro, água (Contabiliza Ociosidade)</span>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => confirmBreak('Café')}
+                className="flex items-center gap-4 w-full p-4 rounded-xl border border-gray-200 hover:border-amber-500 hover:bg-amber-50 transition-all group"
+              >
+                <div className="bg-amber-100 group-hover:bg-amber-200 p-3 rounded-full transition-colors">
+                  <Coffee className="w-5 h-5 text-amber-700" />
+                </div>
+                <div className="text-left">
+                  <span className="block font-bold text-gray-800">Hora do Café</span>
+                  <span className="text-xs text-gray-500">Intervalo de 15min</span>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => confirmBreak('Almoço')}
+                className="flex items-center gap-4 w-full p-4 rounded-xl border border-gray-200 hover:border-green-500 hover:bg-green-50 transition-all group"
+              >
+                <div className="bg-green-100 group-hover:bg-green-200 p-3 rounded-full transition-colors">
+                  <Utensils className="w-5 h-5 text-green-700" />
+                </div>
+                <div className="text-left">
+                  <span className="block font-bold text-gray-800">Almoço</span>
+                  <span className="text-xs text-gray-500">Refeição principal</span>
+                </div>
+              </button>
+            </div>
+
+            <button 
+              onClick={() => {
+                setShowBreakModal(false); 
+                setIsPaused(false);
+              }}
+              className="mt-6 w-full py-3 text-gray-500 hover:text-gray-800 font-medium text-sm transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: Resumo Final do Dia */}
+      {showEndDaySummary && (
+        <div className="fixed inset-0 bg-violet-900/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden animate-in slide-in-from-bottom-10 duration-500">
+                <div className="bg-gradient-to-r from-violet-600 to-purple-600 p-8 text-white text-center">
+                    <Award className="w-16 h-16 mx-auto mb-4 text-yellow-300" />
+                    <h2 className="text-3xl font-bold mb-1">Excelente Trabalho!</h2>
+                    <p className="text-purple-200">Resumo do seu dia</p>
+                </div>
+                
+                <div className="p-8 space-y-6">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center">
+                            <p className="text-xs font-bold text-green-600 uppercase mb-1">Tempo Focado</p>
+                            <p className="text-3xl font-bold text-green-800">{formatTimeShort(totalWorkedSeconds)}</p>
+                            <p className="text-xs text-green-600 mt-1">{formatTime(totalWorkedSeconds)}</p>
+                        </div>
+                        <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 text-center">
+                            <p className="text-xs font-bold text-amber-600 uppercase mb-1">Tempo Pausa</p>
+                            <p className="text-3xl font-bold text-amber-800">{formatTimeShort(totalPausedSeconds)}</p>
+                            <p className="text-xs text-amber-600 mt-1">{formatTime(totalPausedSeconds)}</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-50 p-4 rounded-xl text-center">
+                        <p className="text-gray-500 text-sm mb-2">Produtividade do Dia</p>
+                        <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+                            <div 
+                                className="bg-violet-600 h-full rounded-full transition-all duration-1000"
+                                style={{ width: `${(totalWorkedSeconds / (totalWorkedSeconds + totalPausedSeconds || 1)) * 100}%` }}
+                            ></div>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-2">
+                             Você passou {Math.round((totalWorkedSeconds / (totalWorkedSeconds + totalPausedSeconds || 1)) * 100)}% do tempo focado.
+                        </p>
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                        <button 
+                            onClick={() => {
+                                setShowEndDaySummary(false);
+                                setIsPaused(false);
+                            }}
+                            className="flex-1 py-3 px-4 rounded-xl border border-gray-300 text-gray-600 font-bold hover:bg-gray-50 transition-colors"
+                        >
+                            Voltar
+                        </button>
+                        <button 
+                            onClick={confirmEndDay}
+                            className="flex-1 py-3 px-4 rounded-xl bg-violet-600 text-white font-bold hover:bg-violet-700 shadow-lg shadow-violet-200 transition-colors"
+                        >
+                            Confirmar & Sair
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+    </div>
+  );
+}
